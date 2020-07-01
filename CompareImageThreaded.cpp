@@ -14,7 +14,8 @@
 namespace fs = std::filesystem;
 //Function receives directory, searches all images, loads pointers into array and starts comparing
 
-/* RRRRRRRRemake this shit comment*/
+//This function searches for images, loads them into a vector and starts the threads that search for repeated
+//Then deletes or does whatever with the repeated images
 std::vector<void*> search(const std::string& path, const int options)
 {
 	std::vector<void*> p; //Vector in which to store all pointers
@@ -38,16 +39,13 @@ std::vector<void*> search(const std::string& path, const int options)
 	}
 	std::cout << "Found " << k << " images \n";
 	std::cout << "Checking images THIS MAY TAKE A WHILE!\n";
-	//Since loading all the images in memory could consume too much memory I opted for a slower approach, load the first image in memory and access
-	//all other images via a thread, while the images are being compared a second thread will load the next image into memory
 	
-	//Changes threads for async
+	//Changed threads for async
 
 	auto future_first = std::async(parallel_threads, 0, image_path);
 	auto future_second = std::async(parallel_threads, 1, image_path);
 	auto future_third = std::async(parallel_threads, 2, image_path);
 	auto future_fourth = std::async(parallel_threads, 3, image_path);
-	std::cout << "Threads started, waiting for completion\n";
 
 	std::vector<fs::path> get_repeated = future_first.get();
 	repeated.insert(repeated.end(),get_repeated.begin(),get_repeated.end());
