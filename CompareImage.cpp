@@ -8,21 +8,24 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <unordered_map>
 #include "CompareImage.h"
 //Defined fs to avoid using the long string of characters every goddam time
 namespace fs = std::filesystem;
-//Method receives directory, searches all images, loads pointers into array and starts comparing
 
-/* P will return an array of pointers, pointing to repeated images so that the main function will be able to show them
-to the user and the user will have the ability to choose what to do with them, delete, save, move... As well
-as compare repeated images to choose which one to save (by weight of file, resolution or manually choose)*/
+//Method receives path, searches all images, loads vector and does anything with the images (delete or show)
 std::vector<void*> search(const std::string& path, const int options)
 {
 	std::vector<void*> p; //Vector in which to store all pointers
 	std::vector<fs::path> image_path; //Vector of paths in which to store all paths to the images
 	std::vector<fs::path> repeated; //Vector in which to store all paths to REPEATED images
-	std::vector<fs::path> deleted;	//Vector in which to store paths before deleting, solves exception
-	auto k = 0;
+	std::vector<fs::path> deleted; //Vector in which to store paths before deleting, solves exception
+	std::vector<cv::Mat> processed_imgs; //Save processed images before getting hashmap
+	cv::Mat gray_image; //Define gray image to create gray scale images
+	cv::Size size(8, 8); //Define size to be used as parameter in resize function
+	long int hasher; //Hasher will help store the hash of each image before being added to a vector
+	std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
+	auto count = 0;
 	cv::redirectError(handleError);
 	//Search for all the files and directories inside the firstly specified path
 	std::cout << "Looking for images in folders and loading them...\n";
@@ -30,44 +33,64 @@ std::vector<void*> search(const std::string& path, const int options)
 	{
 		if (is_directory(el) != true)
 		{
-			if ((el.path().extension().compare(".jpg")) == 0 || (el.path().extension().compare(".jpeg")) == 0) //|| ".png" not yet, need to check how to reformat images to avoid warnings of library
+			if ((el.path().extension().compare(".jpg")) == 0 || (el.path().extension().compare(".jpeg")) == 0 || (el.path().extension().compare(".png")) == 0)
+				//|| ".png" not yet, need to check how to reformat images to avoid warnings of library
 			{
 				image_path.push_back(el.path());
-				k++;
+				count++;
 			}
 		}
 	}
-	std::cout << "Found " << k << " images \n";
-	std::cout << "Checking images THIS MAY TAKE A WHILE!";
-	//Since loading all the images in memory could consume too much memory I opted for a slower approach, load the first image in memory and access
-	//all other images via a thread, while the images are being compared a second thread will load the next image into memory
-	//Thread will be coming later oops
-	bool found = false;
-	for (auto i = 0; i < image_path.size(); i++)
+	std::cout << "Found " << count << " images \n";
+	std::cout << "Starting image processing and searching\n";
+	count = 0;
+	//Move to function
+	for (int i = 0; i < image_path.size(); i++)
 	{
-		//Implement threads here, i = 0: thread 1, i = 1: thread 2...
-		//or maybe start threads before and start i = <whatever> and that starts threads... gotta check
-		//Should also put something to show that the program is still doing things
-		cv::Mat compared_image = cv::imread(image_path[i].u8string());
-		for (auto j = i + 1; ((j < image_path.size()) && (found == false)); j++)
+		cv::Mat processing_image = cv::imread(image_path[i].u8string(), cv::IMREAD_COLOR); //cv::IMREAD_UNCHANGED used to be
+		std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
+		if (processing_image.dims != 0)
 		{
-			cv::Mat comparing_image = cv::imread(image_path[j].u8string());
-			if (comparator(compared_image, comparing_image) == true)
+			if(processing_image.channels())
 			{
-				//add paths to variable
-				repeated.push_back(image_path[i]);
-				repeated.push_back(image_path[j]);
-				found = true;
+				
+			}
+			cv::cvtColor(processing_image, gray_image, cv::COLOR_BGR2GRAY);
+			cv::resize(gray_image, gray_image, size);
+			hasher = 1;
+			for (int j = 0; j < (gray_image.cols - 1); j++)
+			{
+				for (int l = 0; l < gray_image.rows; l++)
+				{
+					hasher = hasher + gray_image.at<uchar>(l, j); //will leave it like this for now
+				}
+			}
+			
+			if (hashmap.empty() == true)
+			{
+				hashmap[hasher] = i;
+				//Add hash value to each path (path is a number of the position of a path in the vector image_path)
+			}
+			else
+			{
+				it = hashmap.find(hasher);
+				if (it != hashmap.end())
+				{
+					//Add to repeated vector
+					repeated.push_back(image_path[it->second]);
+					repeated.push_back(image_path[i]);
+					count = count + 2;
+					
+				}
+				else
+				{
+					//Add hash value to each path (path is a number of the position of a path in the vector image_path)
+					hashmap[hasher] = i;
+				}
 			}
 		}
-		std::cout << "i equals: " << i << "\n";
-		found = false;
-		if((i != 0) && (i % 100 == 0))
-		{
-			std::cout << "Already checked: " << i << " number of images \n";
-		}
 	}
-	std::cout << "Number of repeated images found " << repeated.size() / 2 << " is it equal to size?: " << "\n";
+	std::cout << "Number of repeated images found " << count << "\n";
 	switch (options)
 	{
 	case 1:
@@ -86,15 +109,34 @@ std::vector<void*> search(const std::string& path, const int options)
 				deleted.push_back(repeated[j]);
 			}
 		}
-		for(int i = 0; i < deleted.size();i++)
+		for (int i = 0; i < deleted.size(); i++)
 		{
 			fs::remove(deleted[i]);
 		}
 		std::cout << "Finished removal, have a nice day \n";
-		break;;
+		break;
 	case 2:
-		//Check original resolutions and delete lower
-		break;;
+		std::cout << "Starting deletion of images\n";
+		for (int i = 0; i < repeated.size(); i = i + 2)
+		{
+			j = i + 1;
+			cv::Mat image1 = cv::imread(repeated[i].u8string(), cv::IMREAD_UNCHANGED);
+			cv::Mat image2 = cv::imread(repeated[i].u8string(), cv::IMREAD_UNCHANGED);
+			if ((image1.cols + image1.rows) > (image2.cols + image2.rows))
+			{
+				deleted.push_back(repeated[i]);
+			}
+			else
+			{
+				deleted.push_back(repeated[j]);
+			}
+		}
+		for (int i = 0; i < deleted.size(); i++)
+		{
+			fs::remove(deleted[i]);
+		}
+		std::cout << "Finished removal, have a nice day \n";
+		break;
 	case 3:
 		//Start showing every pair of images and ask Right (R) or Left(L)
 		char choice;
@@ -109,71 +151,58 @@ std::vector<void*> search(const std::string& path, const int options)
 			{
 			case 'L':
 				fs::remove(repeated[i]);
-				break;;
+				break;
 			case 'l':
 				fs::remove(repeated[i]);
-				break;;
+				break;
 			case 'R':
 				fs::remove(repeated[j]);
-				break;;
+				break;
 			case 'r':
 				fs::remove(repeated[j]);
-				break;;
+				break;
 			default:
 				std::cout << "Wrong char, no image was deleted";
-				break;;
+				break;
 			}
 			std::cout << "\n";
 		}
-		break;;
+		break;
 	default:
-		//Make a for to show all names
+		//Make a for to show all name
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
 			int j = i + 1;
 			std::cout << "First found: " << repeated[i] << "\nSecond found: " << repeated[j] << "\n\n";
 		}
-		break;;
+		break;
 	}
-	std::cout << "Program ending, have a nice day :3";
-	std::this_thread::sleep_for(std::chrono::seconds(5));
+	std::cout << "Program ending, have a nice day :3\n";
+	system("pause");
 	return p;
 };
 
-int handleError(int status, const char* func_name,
-	const char* err_msg, const char* file_name,
-	int line, void* userdata)
+bool already_in(const fs::path searched, std::vector<fs::path> search_in)
 {
-	//Do nothing -- will suppress console output
-	return 0;   //Return value is not used
-}
-
-//Method to compare 2 images, to simplify right now it will avoid looking for different resolutions
-bool comparator(cv::Mat& compared_img, cv::Mat& comparing_img)
-{
-	auto equal = true;
-	if ((compared_img.cols == comparing_img.cols) && (compared_img.rows == comparing_img.rows))
+	bool ret = false;
+	for (int i = 0; ((i < search_in.size()) && (ret == false)); i++)
 	{
-		for (auto i = 0; ((i < compared_img.rows) && (equal == true)); i++)
+		if (searched.compare(search_in[i]) == 0)
 		{
-			for (auto j = 0; ((j < compared_img.cols) && (equal == true)); j++)
-			{
-				if(((i + j) % 2) == 0) //skip a pixel every pixel read. It shouldn't be a problem except on very slow resolution images
-				{
-					if (compared_img.at<cv::Vec3b>(i, j) != comparing_img.at<cv::Vec3b>(i, j))
-					{
-						equal = false;
-					}
-				}
-			}
+			ret = true;
 		}
 	}
-	else
-	{
-		equal = false;
-	}
-	return equal;
+	return ret;
 }
+
+int handleError(int status, const char* func_name,
+                const char* err_msg, const char* file_name,
+                int line, void* userdata)
+{
+	//Do nothing -- will suppress console output
+	return 0; //Return value is not used
+}
+
 
 //I can't be bothered to make a UI for now so console will be
 int main()
@@ -185,13 +214,13 @@ int main()
 	std::cout <<
 		"Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	std::cout << "Enter the path where you want to search: ";
-	std::getline(std::cin,path);
+	std::getline(std::cin, path);
 	std::cout <<
 		"\nChoose between the different options: \n1 - Automatically delete images based on their size (saves heaviest)\n";
 	std::cout <<
-		"2 - Automatically delete images based on resolution (saves biggest resolution) -not yet implemented-\n";
+		"2 - Automatically delete images based on resolution (saves biggest resolution)\n";
 	std::cout << "3 - Manually delete images not recommended, takes a lot of time\n";
-	std::cout << "4 - Don't delete just show names\n";
+	std::cout << "4 - Don't delete just show names of repeated images\n";
 	std::cout << "Enter number: ";
 	std::cin >> options;
 	search(path, options);
