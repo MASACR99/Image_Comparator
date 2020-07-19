@@ -3,10 +3,10 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <png.h>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <thread>
 #include <chrono>
 #include <unordered_map>
 #include "CompareImage.h"
@@ -16,6 +16,8 @@ namespace fs = std::filesystem;
 //Method receives path, searches all images, loads vector and does anything with the images (delete or show)
 std::vector<void*> search(const std::string& path, const int options)
 {
+	//define nullstream to try and get stderr to not print
+	const char* nullStream = "/dev/null";
 	std::vector<void*> p; //Vector in which to store all pointers
 	std::vector<fs::path> image_path; //Vector of paths in which to store all paths to the images
 	std::vector<fs::path> repeated; //Vector in which to store all paths to REPEATED images
@@ -23,10 +25,19 @@ std::vector<void*> search(const std::string& path, const int options)
 	std::vector<cv::Mat> processed_imgs; //Save processed images before getting hashmap
 	cv::Mat gray_image; //Define gray image to create gray scale images
 	cv::Size size(8, 8); //Define size to be used as parameter in resize function
+	//Defined variables for progress bar
+	int step = 1;
+	int displayNext = step;
+	int percent = 0;
 	long int hasher; //Hasher will help store the hash of each image before being added to a vector
 	std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
 	auto count = 0;
+	auto start = std::chrono::high_resolution_clock::now();
+	//Redirect all opencv errors, there's a shitty one that doesn't affect execution but prompts sometimes
 	cv::redirectError(handleError);
+	//This should stop libpng warnings...
+	nullStream = "nul:";
+	freopen(nullStream,"w",stderr);
 	//Search for all the files and directories inside the firstly specified path
 	std::cout << "Looking for images in folders and loading them...\n";
 	for (const auto& el : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied))
@@ -34,7 +45,6 @@ std::vector<void*> search(const std::string& path, const int options)
 		if (is_directory(el) != true)
 		{
 			if ((el.path().extension().compare(".jpg")) == 0 || (el.path().extension().compare(".jpeg")) == 0 || (el.path().extension().compare(".png")) == 0)
-				//|| ".png" not yet, need to check how to reformat images to avoid warnings of library
 			{
 				image_path.push_back(el.path());
 				count++;
@@ -43,18 +53,24 @@ std::vector<void*> search(const std::string& path, const int options)
 	}
 	std::cout << "Found " << count << " images \n";
 	std::cout << "Starting image processing and searching\n";
+	double division = 0;
 	count = 0;
 	//Move to function
 	for (int i = 0; i < image_path.size(); i++)
 	{
-		cv::Mat processing_image = cv::imread(image_path[i].u8string(), cv::IMREAD_COLOR); //cv::IMREAD_UNCHANGED used to be
+		//Nailed it
+		percent = (100 * (i + 1) / image_path.size());
+		if (percent >= displayNext)
+		{
+			std::cout << "\r" << "[" << std::string(percent / 5, (char)254u) << std::string(100 / 5 - percent / 5, ' ') << "]";
+			std::cout << percent << "%" << " [Image " << i + 1 << " of " << image_path.size() << "]";
+			std::cout.flush();
+			displayNext += step;
+		}
+		cv::Mat processing_image = cv::imread(image_path[i].u8string(), cv::IMREAD_COLOR);
 		std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
 		if (processing_image.dims != 0)
 		{
-			if(processing_image.channels())
-			{
-				
-			}
 			cv::cvtColor(processing_image, gray_image, cv::COLOR_BGR2GRAY);
 			cv::resize(gray_image, gray_image, size);
 			hasher = 1;
@@ -62,8 +78,9 @@ std::vector<void*> search(const std::string& path, const int options)
 			{
 				for (int l = 0; l < gray_image.rows; l++)
 				{
-					hasher = hasher + gray_image.at<uchar>(l, j); //will leave it like this for now
+					hasher = hasher + gray_image.at<uchar>(l, j); //will leave it like this for now, seems to work
 				}
+				hasher = hasher * hasher; //just to make hasher even more unique
 			}
 			
 			if (hashmap.empty() == true)
@@ -77,10 +94,17 @@ std::vector<void*> search(const std::string& path, const int options)
 				if (it != hashmap.end())
 				{
 					//Add to repeated vector
-					repeated.push_back(image_path[it->second]);
+					if(already_in(image_path[it->second],repeated))
+					{
+						repeated.push_back(image_path[it->second]);
+					}
+					else
+					{
+						repeated.push_back(image_path[it->second]);
+						count++;
+					}
 					repeated.push_back(image_path[i]);
-					count = count + 2;
-					
+					count++;
 				}
 				else
 				{
@@ -90,7 +114,7 @@ std::vector<void*> search(const std::string& path, const int options)
 			}
 		}
 	}
-	std::cout << "Number of repeated images found " << count << "\n";
+	std::cout << "\nNumber of repeated images found " << count/2 << "\n";
 	switch (options)
 	{
 	case 1:
@@ -113,7 +137,7 @@ std::vector<void*> search(const std::string& path, const int options)
 		{
 			fs::remove(deleted[i]);
 		}
-		std::cout << "Finished removal, have a nice day \n";
+		std::cout << "Finished removal \n";
 		break;
 	case 2:
 		std::cout << "Starting deletion of images\n";
@@ -122,7 +146,7 @@ std::vector<void*> search(const std::string& path, const int options)
 			j = i + 1;
 			cv::Mat image1 = cv::imread(repeated[i].u8string(), cv::IMREAD_UNCHANGED);
 			cv::Mat image2 = cv::imread(repeated[i].u8string(), cv::IMREAD_UNCHANGED);
-			if ((image1.cols + image1.rows) > (image2.cols + image2.rows))
+			if ((image1.cols + image1.rows) < (image2.cols + image2.rows))
 			{
 				deleted.push_back(repeated[i]);
 			}
@@ -135,7 +159,7 @@ std::vector<void*> search(const std::string& path, const int options)
 		{
 			fs::remove(deleted[i]);
 		}
-		std::cout << "Finished removal, have a nice day \n";
+		std::cout << "Finished removal\n";
 		break;
 	case 3:
 		//Start showing every pair of images and ask Right (R) or Left(L)
@@ -169,7 +193,7 @@ std::vector<void*> search(const std::string& path, const int options)
 		}
 		break;
 	default:
-		//Make a for to show all name
+		//Make a for to show all names
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
 			int j = i + 1;
@@ -177,7 +201,10 @@ std::vector<void*> search(const std::string& path, const int options)
 		}
 		break;
 	}
+	auto end = std::chrono::high_resolution_clock::now();
 	std::cout << "Program ending, have a nice day :3\n";
+	auto time_elapsed = end - start;
+	std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::milliseconds>(time_elapsed).count() << "ms\n";
 	system("pause");
 	return p;
 };
