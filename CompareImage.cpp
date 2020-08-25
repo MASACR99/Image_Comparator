@@ -4,7 +4,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <png.h>
-#include <filesystem>
+#include <boost/filesystem.hpp> //WINDOWS IS A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE
 #include <iostream>
 #include <string>
 #include <chrono>
@@ -13,28 +13,28 @@
 #include "CompareImage.h"
 //Defined fs to avoid using the long string of characters every goddam time
 //But I'm dumb enough to not place a usinn std:: because I'm as dumb as a fucking fish
-namespace fs = std::filesystem;
+using namespace boost::filesystem;
 cv::Size SIZE(8, 8); //Define size to be used as parameter in resize function, moved to global variable
-int THREADS = 4;
+int THREADS;
 std::mutex mtx;
 std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
-std::vector<fs::path> image_path; //Vector of paths in which to store all paths to the images
-std::vector<fs::path> repeated; //Vector in which to store all paths to REPEATED images
+std::vector<path> image_path; //Vector of paths in which to store all paths to the images
+std::vector<path> repeated; //Vector in which to store all paths to REPEATED images
 auto count = 0;
-int progress = 0;
+int progress = 0; //Used for progress bar shit
 
 //Method receives path, searches all images, loads vector and does anything with the images (delete or show)
-void search(const std::string& path, const int options)
+void search(const std::string& searc_path, const int options)
 {
 	//define nullstream to try and get stderr to not print
 	const char* nullStream = "/dev/null";
-	std::vector<fs::path> deleted; //Vector in which to store paths before deleting, solves exception
+	std::vector<path> deleted; //Vector in which to store paths before deleting, solves exception
 	std::vector<std::thread> threads(THREADS);
-	//Defined variables for progress bar
+	auto start = std::chrono::high_resolution_clock::now();
+	//Variables for progress bar
 	int step = 1;
 	int displayNext = step;
 	int percent = 0;
-	auto start = std::chrono::high_resolution_clock::now();
 	//Redirect all opencv errors, there's a shitty one that doesn't affect execution but prompts sometimes
 	cv::redirectError(handleError);
 	//This should stop libpng warnings...
@@ -42,11 +42,11 @@ void search(const std::string& path, const int options)
 	freopen(nullStream,"w",stderr);
 	//Search for all the files and directories inside the firstly specified path
 	std::cout << "Looking for images in folders and loading them...\n";
-	for (const auto& el : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied))
+	for (const auto& el : recursive_directory_iterator(searc_path, directory_options::skip_permission_denied))
 	{
 		if (is_directory(el) != true)
 		{
-			if ((el.path().extension().compare(".jpg")) == 0 || (el.path().extension().compare(".jpeg")) == 0 || (el.path().extension().compare(".png")) == 0)
+			if ((el.path().extension().string().compare(".jpg")) == 0 || (el.path().extension().string().compare(".jpeg")) == 0 || (el.path().extension().string().compare(".png")) == 0)
 			{
 				image_path.push_back(el.path());
 				count++;
@@ -59,16 +59,15 @@ void search(const std::string& path, const int options)
 	count = 0;
 
 	//Start all threads
-	for(int i = 0; i < threads.size();i++)
+	for(int i = 0; i < THREADS;i++)
 	{
-		threads[i] =  std::thread(hash_function,image_path.size(),i);
+		threads[i] =  std::thread(hash_function,i);
 	}
 
-	//Nailed that progress bar and fucked it up by using threads, nice job me...
-	//Maybe this makes a sort of decent progress bar
-	for(int i = 0; progress < image_path.size(); )
+	//Gotta re-add the % bar
+	for (; progress < image_path.size();)
 	{
-		percent = (100 * (progress + 1) / image_path.size());
+		percent = (100 * (progress + 1)) / image_path.size();
 		if (percent >= displayNext)
 		{
 			std::cout << "\r" << "[" << std::string(percent / 5, (char)254u) << std::string(100 / 5 - percent / 5, ' ') << "]";
@@ -77,9 +76,9 @@ void search(const std::string& path, const int options)
 			displayNext += step;
 		}
 	}
-	//Wait for all threads to end, not really needed since the progress bar will be displayed until the end of all threads so it
-	//Just works as a join() anyway but cleanse of code is always nice
-	for(int i = 0; i < threads.size();i++)
+
+	//Wait for all threads to end
+	for(int i = 0; i < THREADS;i++)
 	{
 		threads[i].join();
 	}
@@ -94,7 +93,7 @@ void search(const std::string& path, const int options)
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
 			j = i + 1;
-			if ((fs::file_size(repeated[i])) < (fs::file_size(repeated[j])))
+			if ((file_size(repeated[i])) < (file_size(repeated[j])))
 			{
 				deleted.push_back(repeated[i]);
 			}
@@ -105,7 +104,7 @@ void search(const std::string& path, const int options)
 		}
 		for (int i = 0; i < deleted.size(); i++)
 		{
-			fs::remove(deleted[i]);
+			remove(deleted[i]);
 		}
 		std::cout << "Finished removal \n";
 		break;
@@ -127,7 +126,7 @@ void search(const std::string& path, const int options)
 		}
 		for (int i = 0; i < deleted.size(); i++)
 		{
-			fs::remove(deleted[i]);
+			remove(deleted[i]);
 		}
 		std::cout << "Finished removal\n";
 		break;
@@ -138,22 +137,17 @@ void search(const std::string& path, const int options)
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
 			int j = i + 1;
-			std::cout << "L= " << repeated[i] << "of size: " << fs::file_size(repeated[i]) << "  R= " << repeated[j] <<
-				"of size: " << fs::file_size(repeated[j]);
+			std::cout << "L= " << repeated[i] << "of size: " << file_size(repeated[i]) << "  R= " << repeated[j] <<
+				"of size: " << file_size(repeated[j]);
 			std::cin >> choice;
+			choice = std::tolower(choice);
 			switch (choice)
 			{
-			case 'L':
-				fs::remove(repeated[i]);
-				break;
 			case 'l':
-				fs::remove(repeated[i]);
-				break;
-			case 'R':
-				fs::remove(repeated[j]);
+				remove(repeated[i]);
 				break;
 			case 'r':
-				fs::remove(repeated[j]);
+				remove(repeated[j]);
 				break;
 			default:
 				std::cout << "Wrong char, no image was deleted";
@@ -178,11 +172,11 @@ void search(const std::string& path, const int options)
 	system("pause");
 };
 
-void hash_function(int limit,int start_point)
+void hash_function(int start_point)
 {
 	long int hasher = 1; //Store the hashed value of an image
 	std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
-	for (int i = start_point; i < limit; i += THREADS)
+	for (int i = start_point; i < image_path.size(); i += THREADS)
 	{
 		cv::Mat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR); //had to change from image_path[i].u8string() to .string() due to a library update
 		hasher = 1; //Must reset hasher to 1
@@ -227,13 +221,12 @@ void hash_function(int limit,int start_point)
 			
 			}
 			mtx.unlock();
-			progress++;
 			//No more important thingys :D
 		}else
 		{
-			progress++;
 			hasher = -1;
 		}
+		progress++;
 	}
 }
 
@@ -251,6 +244,7 @@ int main()
 {
 	std::string path;
 	int options;
+	char sure;
 	std::cout << "Welcome to the Repeated Image Predator (RIP)\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	std::cout << "Enter the path where you want to search: ";
@@ -264,5 +258,18 @@ int main()
 	std::cout << "How many threads would you like to create? (The more threads the faster it will be but the more it will consume CPU and RAM)\n";
 	std::cout << "Recommended your CPU cores times 2, in case of not knowing use 4, not recommended to use more than 128\n";
 	std::cin >> THREADS;
+	if (THREADS < 1)
+	{
+		THREADS = 4;
+	}else if (THREADS > 128)
+	{
+		std::cout << "You chose more than 128 threads, are you sure? (Y/n)\n";
+		std::cin >> sure;
+		sure = std::tolower(sure);
+		if(sure != 'y')
+		{
+			exit(0);
+		}
+	}
 	search(path, options);
 }
