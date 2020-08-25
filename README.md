@@ -1,3 +1,2 @@
 # Image_Comparator
-I can upload code but I can't upload any .dll needed to compile sooo in case you want to compile you'll need opencv_world430.dll and opencv_world430.dll, you can download
-any release which include the .exe and the dll necessary to run
+Opens a terminal and prompts you with instructions to open a folder and start looking for repeated images inside it and all sub-folders, after that based on your selection it will delete images automatically, show the names of the files or prompt you to manually delete each of them. In case you want to compile the code you need opencv and boost filesystem, all the .dll is included in the latest release and is needed for the .exe to work. Enjoy :3
