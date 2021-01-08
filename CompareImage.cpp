@@ -3,6 +3,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
+#include <opencv2/core/ocl.hpp> //Get openCL from openCV library
 #include <png.h>
 #include <boost/filesystem.hpp> //WINDOWS IS A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE A NIGHTMARE
 #include <iostream>
@@ -11,6 +12,7 @@
 #include <unordered_map>
 #include <mutex>
 #include "CompareImage.h"
+#define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD, NVIDIA and Intel should be able to run it
 //Defined fs to avoid using the long string of characters every goddam time
 //But I'm dumb enough to not place a usinn std:: because I'm as dumb as a fucking fish
 using namespace boost::filesystem;
@@ -50,7 +52,6 @@ void search(const std::string& searc_path, const int options)
 	std::cout << "Starting image processing and searching\n";
 	double division = 0;
 	progress = 0;
-	//Start all threads
 	for (int i = 0; i < max_threads; i++)
 	{
 		threads[i] = std::thread(hash_function, i);
@@ -60,7 +61,7 @@ void search(const std::string& searc_path, const int options)
 	int step = 1;
 	int displayNext = step;
 	int percent = 0;
-	
+
 	for (; progress < image_path.size();)
 	{
 		//Lower CPU usage for this bad boi, goes at start because it would skip last iteration if put at end
@@ -157,15 +158,18 @@ void search(const std::string& searc_path, const int options)
 	auto time_elapsed = end - start;
 	int tot_time = std::chrono::duration_cast<std::chrono::seconds>(time_elapsed).count();
 	//show elapsed time with diferent 
-	if(tot_time < 30)
+	if (tot_time < 30)
 	{
 		std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::milliseconds>(time_elapsed).count() << "ms\n";
-	}else if(tot_time < 300){
+	}
+	else if (tot_time < 300) {
 		std::cout << "Elapsed computation time: " << tot_time << "s\n";
-	}else if(tot_time < 3600){
+	}
+	else if (tot_time < 3600) {
 		std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::minutes>(time_elapsed).count()
 			<< "minutes and " << tot_time << "seconds\n";
-	}else{
+	}
+	else {
 		std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::hours>(time_elapsed).count()
 			<< "hours and " << std::chrono::duration_cast<std::chrono::minutes>(time_elapsed).count() << "minutes\n";
 		std::cout << "shit that was a long time, hope it was all okay <3\n";
@@ -242,9 +246,39 @@ int handleError(int status, const char* func_name,
 	return 0; //Return value is not used
 }
 
+int start_opencl(cv::ocl::Device dev)
+{
+	cv::ocl::Context context;
+	if (!cv::ocl::haveOpenCL()) {
+		std::cout << "OpenCL not found\n";
+		return -1;
+	}
+	if (!context.create(cv::ocl::Device::TYPE_DGPU)) { //First try getting DGPU
+		if (!context.create(cv::ocl::Device::TYPE_GPU)) { //If there's none get GPU
+			if (!context.create(cv::ocl::Device::TYPE_CPU)) { //Last chance get CPU
+				std::cout << "Failure creating context for any CPU, GPU or DPGU device\n";
+				return -1;
+			}
+		}
+	}
+	std::cout << context.ndevices() << " OpenCL devices are detected.\n";
+	for (int i = 0; i < context.ndevices(); i++) //Printing for debug
+	{
+		cv::ocl::Device device = context.device(i);
+		std::cout << "name                 : " << device.name() << "\n";
+		std::cout << "available            : " << device.available() << "\n";
+		std::cout << "imageSupport         : " << device.imageSupport() << "\n";
+		std::cout << "OpenCL_C_Version     : " << device.OpenCL_C_Version() << "\n";
+	}
+	dev = context.device(0);
+	return 0;
+}
+
 //I can't be bothered to make a UI for now so console will be
 int main()
 {
+	cv::ocl::Device device;
+	int ret = start_opencl(device);
 	std::string path = "This_shit_better_not_exist_you_fucking_cunt";
 	int options = 0;
 	char sure = 'z';
@@ -269,10 +303,15 @@ int main()
 		std::cout << "Enter number: ";
 		std::cin >> options;
 		if (options < 1 || options > 4) {
-			std::cout << "Invalid option, check you used a number between 1 and 4\n";
+			std::cout << "Invalid option, check if you used a number between 1 and 4\n";
 		}
 	}
-
+	if (ret != -1) {
+		cv::ocl::setUseOpenCL(true);
+	}
+	else {
+		cv::ocl::setUseOpenCL(false);
+	}
 	std::cout << "How many threads would you like to create? (The more threads the faster it will be but the more it will consume CPU and RAM)\n";
 	std::cout << "Recommended your CPU cores times 2, in case of not knowing use 4, not recommended to use more than 128\n";
 	while (max_threads < 1)
