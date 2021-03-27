@@ -1,2 +1,0 @@
-C:\Users\trole\source\repos\Image_Comparator\x64\Debug\Image_Comparator.exe
-C:\Users\trole\source\repos\Image_Comparator\x64\Debug\Image_Comparator.pdb
