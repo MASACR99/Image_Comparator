@@ -12,9 +12,9 @@
 #include <unordered_map>
 #include <mutex>
 #include "CompareImage.h"
-#define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD, NVIDIA and Intel should be able to run it
+#define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD, NVIDIA and Intel should be able to run it, opencv will use any available version
 //Defined fs to avoid using the long string of characters every goddam time
-//But I'm dumb enough to not place a usinn std:: because I'm as dumb as a fucking fish
+//But I'm dumb enough to not place a using std:: because I'm as dumb as a fucking fish
 using namespace boost::filesystem;
 cv::Size SIZE(8, 8); //Define size to be used as parameter in resize function, moved to global variable
 int max_threads = 0; //start at 0 for user input checks :P
@@ -65,12 +65,12 @@ void search(const std::string& searc_path, const int options)
 	for (; progress < image_path.size();)
 	{
 		//Lower CPU usage for this bad boi, goes at start because it would skip last iteration if put at end
-		std::this_thread::sleep_for(std::chrono::seconds(5));
+		std::this_thread::sleep_for(std::chrono::milliseconds(2500));
 		percent = (100 * (progress + 1)) / image_path.size();
 		if (percent >= displayNext)
 		{
 			std::cout << "\r" << "[" << std::string(percent / 5, (char)254u) << std::string(100 / 5 - percent / 5, ' ') << "]";
-			std::cout << percent << "%" << " [Image " << progress + 1 << " of " << image_path.size() << "]";
+			std::cout << percent << "%" << " [Image " << progress << " of " << image_path.size() << "]";
 			std::cout.flush();
 			displayNext += step;
 		}
@@ -107,8 +107,8 @@ void search(const std::string& searc_path, const int options)
 		std::cout << "Starting deletion of images\n";
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
-			cv::Mat image1 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED);
-			cv::Mat image2 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED);
+			cv::UMat image1 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED).getUMat(cv::ACCESS_READ);
+			cv::UMat image2 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED).getUMat(cv::ACCESS_READ);
 			if ((image1.cols + image1.rows) < (image2.cols + image2.rows))
 			{
 				remove(repeated[i]);
@@ -183,20 +183,20 @@ void hash_function(int start_point)
 	std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
 	for (int i = start_point; i < image_path.size(); i += max_threads)
 	{
+		progress++;
 		try {
-			cv::Mat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR); //had to change from image_path[i].u8string() to .string() due to a library update
+			cv::UMat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR).getUMat(cv::ACCESS_READ); //had to change from image_path[i].u8string() to .string() due to a library update
 			hasher = 1; //Must reset hasher to 1
-			progress++;
 			if (processing_image.dims != 0)
 			{
-				cv::Mat gray_image; //Define gray image to create gray scale images
+				cv::UMat gray_image; //Define gray image to create gray scale images
 				cv::cvtColor(processing_image, gray_image, cv::COLOR_BGR2GRAY);
 				cv::resize(gray_image, gray_image, SIZE);
 				for (int j = 0; j < (gray_image.cols - 1); j++)
 				{
 					for (int l = 0; l < gray_image.rows; l++)
 					{
-						hasher = hasher + gray_image.at<uchar>(l, j); //will leave it like this for now, seems to work
+						hasher = hasher + gray_image.getMat(cv::ACCESS_READ).at<uchar>(l, j); //will leave it like this for now, seems to work
 					}
 					hasher = hasher * hasher; //just to make hasher even more unique
 				}
@@ -228,12 +228,10 @@ void hash_function(int start_point)
 			}
 			else
 			{
-				progress++;
 				hasher = -1;
 			}
 		}
 		catch (...) {
-			progress++;
 		}
 	}
 }
@@ -262,14 +260,6 @@ int start_opencl(cv::ocl::Device dev)
 		}
 	}
 	std::cout << context.ndevices() << " OpenCL devices are detected.\n";
-	for (int i = 0; i < context.ndevices(); i++) //Printing for debug
-	{
-		cv::ocl::Device device = context.device(i);
-		std::cout << "name                 : " << device.name() << "\n";
-		std::cout << "available            : " << device.available() << "\n";
-		std::cout << "imageSupport         : " << device.imageSupport() << "\n";
-		std::cout << "OpenCL_C_Version     : " << device.OpenCL_C_Version() << "\n";
-	}
 	dev = context.device(0);
 	return 0;
 }
