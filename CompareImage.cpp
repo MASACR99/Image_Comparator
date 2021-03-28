@@ -250,7 +250,7 @@ int main()
 	std::string path = "This_shit_better_not_exist_you_fucking_cunt";
 	int options = 0;
 	char sure = 'z';
-	std::ifstream infile("../config.cfg");
+	std::ifstream infile("config.cfg");
 	if (infile.fail()) {
 		std::cout << "Config file not found";
 		exit(0);
