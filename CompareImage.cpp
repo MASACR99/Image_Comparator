@@ -42,7 +42,7 @@ void search(const std::string& searc_path, const int options)
 		if (is_directory(el) != true)
 		{
 			aux = el.path().extension().string();
-			if ((aux.compare(".jpg")) == 0 || (aux.compare(".jpeg")) == 0 || (aux.compare(".png")) == 0)
+			if ((aux.compare(".jpg")) == 0 || (aux.compare(".jpeg")) == 0 || (aux.compare(".png")) == 0 || (aux.compare(".webp")) == 0  || (aux.compare(".tiff")) == 0 ||(aux.compare(".tif")) == 0)
 			{
 				image_path.push_back(el.path());
 			}
@@ -244,35 +244,19 @@ int handleError(int status, const char* func_name,
 	return 0; //Return value is not used
 }
 
-int start_opencl(cv::ocl::Device dev)
-{
-	cv::ocl::Context context;
-	if (!cv::ocl::haveOpenCL()) {
-		std::cout << "OpenCL not found\n";
-		return -1;
-	}
-	if (!context.create(cv::ocl::Device::TYPE_DGPU)) { //First try getting DGPU
-		if (!context.create(cv::ocl::Device::TYPE_GPU)) { //If there's none get GPU
-			if (!context.create(cv::ocl::Device::TYPE_CPU)) { //Last chance get CPU
-				std::cout << "Failure creating context for any CPU, GPU or DPGU device\n";
-				return -1;
-			}
-		}
-	}
-	std::cout << context.ndevices() << " OpenCL devices are detected.\n";
-	dev = context.device(0);
-	return 0;
-}
-
 //I can't be bothered to make a UI for now so console will be
 int main()
 {
-	cv::ocl::Device device;
-	int ret = start_opencl(device);
 	std::string path = "This_shit_better_not_exist_you_fucking_cunt";
 	int options = 0;
 	char sure = 'z';
-	std::cout << "Welcome to the Repeated Image Predator (RIP)\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
+	std::ifstream infile("../config.cfg");
+	if (infile.fail()) {
+		std::cout << "Config file not found";
+		exit(0);
+	}
+	std::string file_input;
+	std::cout << "Welcome to the Repeated Image Predator (RIP) v2.1\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	//Oh no, not checking input again...
 	while (!is_directory(path))
@@ -296,32 +280,25 @@ int main()
 			std::cout << "Invalid option, check if you used a number between 1 and 4\n";
 		}
 	}
-	if (ret != -1) {
+	//add file reading check for opencl usage
+	std::getline(infile,file_input);
+	int initial_pos = file_input.find('=');
+	int last_pos = file_input.find('#',initial_pos);
+	file_input = file_input.substr(initial_pos+1, last_pos-2-initial_pos); //get correct part of string
+	if (file_input.compare("yes") == 0) {
 		cv::ocl::setUseOpenCL(true);
 	}
 	else {
 		cv::ocl::setUseOpenCL(false);
 	}
-	std::cout << "How many threads would you like to create? (The more threads the faster it will be but the more it will consume CPU and RAM)\n";
-	std::cout << "Recommended your CPU cores times 2, in case of not knowing use 4, not recommended to use more than 128\n";
-	while (max_threads < 1)
-	{
-		std::cin >> max_threads;
-		if (max_threads > 128)
-		{
-			std::cout << "You chose more than 128 threads, are you sure? (Y/n)\n";
-			std::cin >> sure;
-			sure = std::tolower(sure);
-			if (sure != 'y')
-			{
-				max_threads = 0;
-				std::cout << "Try again buckaroo\n";
-			}
-		}
-		else if (max_threads < 1) {
-			std::cout << "IDK how less than 1 thread could work...\n";
-		}
-	}
+
+	//Add file read and check threads > 0
+	std::getline(infile, file_input);
+	initial_pos = file_input.find('=');
+	last_pos = file_input.find('#', initial_pos);
+	file_input = file_input.substr(initial_pos+1, last_pos-2 - initial_pos); //get correct part of string
+	max_threads = std::stoi(file_input);
+	infile.close();
 	//Time to work OH BOI
 	search(path, options);
 }
