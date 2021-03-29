@@ -10,14 +10,15 @@
 #include <string>
 #include <chrono>
 #include <unordered_map>
+#include <thread>
 #include <mutex>
 #include "CompareImage.h"
-#define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD, NVIDIA and Intel should be able to run it, opencv will use any available version
+#define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD and Intel should be able to run it, opencv will use any available version (Nvidia is a pussy and will only run 1.2)
 //Defined fs to avoid using the long string of characters every goddam time
 //But I'm dumb enough to not place a using std:: because I'm as dumb as a fucking fish
 using namespace boost::filesystem;
 cv::Size SIZE(8, 8); //Define size to be used as parameter in resize function, moved to global variable
-int max_threads = 0; //start at 0 for user input checks :P
+int max_threads = std::thread::hardware_concurrency(); //Set the max_threads = number of cpu cores, not really important when using OpenCL though
 std::mutex mtx;
 std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
 std::vector<path> image_path; //Vector of paths in which to store all paths to the images
@@ -65,11 +66,14 @@ void search(const std::string& searc_path, const int options)
 	for (; progress < image_path.size();)
 	{
 		//Lower CPU usage for this bad boi, goes at start because it would skip last iteration if put at end
-		std::this_thread::sleep_for(std::chrono::milliseconds(2500));
-		percent = (100 * (progress + 1)) / image_path.size();
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		percent = ((100 * (progress + 1)) / image_path.size());
+		if (percent > 100) {
+			percent = 100;
+		}
 		if (percent >= displayNext)
 		{
-			std::cout << "\r" << "[" << std::string(percent / 5, (char)254u) << std::string(100 / 5 - percent / 5, ' ') << "]";
+			std::cout << "\r" << "[" << std::string(percent / 5, (char)254u) << std::string((int) (100 / 5 - percent / 5), ' ') << "]";
 			std::cout << percent << "%" << " [Image " << progress << " of " << image_path.size() << "]";
 			std::cout.flush();
 			displayNext += step;
@@ -200,9 +204,6 @@ void hash_function(int start_point)
 					}
 					hasher = hasher * hasher; //just to make hasher even more unique
 				}
-				//Mutex this bad boi
-				mtx.lock();
-				//Extremely important things here
 				if (hashmap.empty() == true)
 				{
 					hashmap[hasher] = i;
@@ -223,8 +224,6 @@ void hash_function(int start_point)
 						hashmap[hasher] = i;
 					}
 				}
-				mtx.unlock();
-				//No more important thingys :D
 			}
 			else
 			{
@@ -256,7 +255,7 @@ int main()
 		exit(0);
 	}
 	std::string file_input;
-	std::cout << "Welcome to the Repeated Image Predator (RIP) v2.1\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
+	std::cout << "Welcome to the Repeated Image Predator (RIP) v2.2\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	//Oh no, not checking input again...
 	while (!is_directory(path))
@@ -282,11 +281,12 @@ int main()
 	}
 	//add file reading check for opencl usage
 	std::getline(infile,file_input);
-	int initial_pos = file_input.find('=');
-	int last_pos = file_input.find('#',initial_pos);
-	file_input = file_input.substr(initial_pos+1, last_pos-2-initial_pos); //get correct part of string
+	int initial_pos = file_input.find('=')+1;
+	int last_pos = file_input.find('#',initial_pos)-1;
+	file_input = file_input.substr(initial_pos, last_pos-initial_pos); //get correct part of string
 	if (file_input.compare("yes") == 0) {
 		cv::ocl::setUseOpenCL(true);
+		max_threads = 2; //Use only 2 threads if OpenCL is enabled, no need for more, no improvements
 	}
 	else {
 		cv::ocl::setUseOpenCL(false);
@@ -294,10 +294,13 @@ int main()
 
 	//Add file read and check threads > 0
 	std::getline(infile, file_input);
-	initial_pos = file_input.find('=');
-	last_pos = file_input.find('#', initial_pos);
-	file_input = file_input.substr(initial_pos+1, last_pos-2 - initial_pos); //get correct part of string
-	max_threads = std::stoi(file_input);
+	initial_pos = file_input.find('=') + 1;
+	last_pos = file_input.find('#', initial_pos) - 1;
+	file_input = file_input.substr(initial_pos, last_pos - initial_pos); //get correct part of string
+	//If config file is not default convert to number, the program will crash if there's no default or a valid number also check if OpenCL is ON, since no real improvements are made by having opencl and more threads
+	if (file_input.compare("default") != 0 && !cv::ocl::useOpenCL()) {
+		max_threads = std::stoi(file_input);
+	}
 	infile.close();
 	//Time to work OH BOI
 	search(path, options);
