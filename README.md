@@ -23,8 +23,8 @@ Opens a terminal and prompts you with instructions to open a folder and start lo
 5- Enjoy the beautiful progress bar   
   
 #### Config
-After release 2.1 there's a config file (config.cfg) where the user can change 2 things, choose whether or not to use OpenCL and hte number of threads to use, you can change them by accessing the file and changing the yes for a no or the default number of threads for another but keep in mind a few things:  
-1- Do not delete the # of the comment since it will remembe future you if you need to change it (also the program needs it to parse the input)
+After release 2.1 there's a config file (config.cfg) where the user can change 2 things, choose whether or not to use OpenCL and the number of threads to use, you can change them by accessing the file and changing the yes for a no or the default number of threads for another but keep in mind a few things:  
+1- Do not delete the # of the comment since it will remember future you if you need to change it (also the program needs it to parse the input)
 2- Do not put any space after the =
   
 #### To-do
