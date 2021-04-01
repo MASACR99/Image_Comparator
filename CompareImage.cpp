@@ -39,11 +39,11 @@ void search(const std::string& searc_path, const int options)
 	//Search for all the files and directories inside the firstly specified path
 	std::cout << "Looking for images in folders and loading them...\n";
 	for (const auto& el : recursive_directory_iterator(searc_path, directory_options::skip_permission_denied))
-	{
+	{ //FIXME do you REALLY want a line in your code that's only a curly brace? CURLY BRACES IN A NEW LINE ARE EVIL
 		if (is_directory(el) != true)
 		{
-			aux = el.path().extension().string();
-			if ((aux.compare(".jpg")) == 0 || (aux.compare(".jpeg")) == 0 || (aux.compare(".png")) == 0 || (aux.compare(".webp")) == 0  || (aux.compare(".tiff")) == 0 ||(aux.compare(".tif")) == 0)
+			aux = el.path().extension().string(); //FIXME trim first ".". if aux is a char* aux+1 could bypass "."
+			if (aux == ".jpg" || aux ==".jpeg" || aux ==".png" || aux ==".webp" || aux ==".tiff" || aux ==".tif") //FIXME make _isImage()_ and use const char* array of extensions
 			{
 				image_path.push_back(el.path());
 			}
@@ -51,7 +51,6 @@ void search(const std::string& searc_path, const int options)
 	}
 	std::cout << "Found " << image_path.size() << " images \n";
 	std::cout << "Starting image processing and searching\n";
-	double division = 0;
 	progress = 0;
 	for (int i = 0; i < max_threads; i++)
 	{
@@ -63,9 +62,9 @@ void search(const std::string& searc_path, const int options)
 	int displayNext = step;
 	int percent = 0;
 
-	for (; progress < image_path.size();)
-	{
+	do {
 		//Lower CPU usage for this bad boi, goes at start because it would skip last iteration if put at end
+		//FIXMEFIXMEFIXME threads share memory. Use callbacks to update progress instead of active wait (this is not SQF). On the other hand, my brain is telling me this code probably sucks.
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		percent = ((100 * (progress + 1)) / image_path.size());
 		if (percent > 100) {
@@ -78,7 +77,7 @@ void search(const std::string& searc_path, const int options)
 			std::cout.flush();
 			displayNext += step;
 		}
-	}
+	} while(progress < image_path.size());
 
 	//Wait for all threads to end
 	//this code isn't that important, since all threads are gonna end before getting here due to the
@@ -92,6 +91,7 @@ void search(const std::string& searc_path, const int options)
 	switch (options)
 	{
 	case 1:
+		//FIXME already requested to put each one in functions
 		//Check size and delete lower
 		std::cout << "Starting deletion of images\n";
 		for (int i = 0; i < repeated.size(); i = i + 2)
@@ -143,6 +143,7 @@ void search(const std::string& searc_path, const int options)
 				remove(repeated[i + 1]);
 				break;
 			default:
+				//FIXME i would prefer 3 options instead of skip: Left, Right, Both (otherwise, prompt again).
 				std::cout << "Wrong char, no image was deleted";
 				break;
 			}
@@ -153,6 +154,7 @@ void search(const std::string& searc_path, const int options)
 		//Make a for to show all names
 		for (int i = 0; i < repeated.size(); i = i + 2)
 		{
+			//FIXME it would be MUCH better to print a single line enclosing each filename in "". eg: "file1","file2".
 			std::cout << "First found: " << repeated[i] << "\nSecond found: " << repeated[i + 1] << "\n\n";
 		}
 		break;
@@ -162,6 +164,7 @@ void search(const std::string& searc_path, const int options)
 	auto time_elapsed = end - start;
 	int tot_time = std::chrono::duration_cast<std::chrono::seconds>(time_elapsed).count();
 	//show elapsed time with diferent 
+	//FIXME my brain tells me this can be improved a lot.
 	if (tot_time < 30)
 	{
 		std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::milliseconds>(time_elapsed).count() << "ms\n";
@@ -202,9 +205,10 @@ void hash_function(int start_point)
 					{
 						hasher = hasher + gray_image.getMat(cv::ACCESS_READ).at<uchar>(l, j); //will leave it like this for now, seems to work
 					}
-					hasher = hasher * hasher; //just to make hasher even more unique
+					hasher = hasher * hasher; //just to make hasher even more unique //FIXME does it really?
 				}
-				if (hashmap.empty() == true)
+				//FIXME hashmap find is probably good enough to make this block useless...
+				if (hashmap.empty())
 				{
 					hashmap[hasher] = i;
 					//Add hash value to each path (path is a number of the position of a path in the vector image_path)
@@ -212,6 +216,7 @@ void hash_function(int start_point)
 				else
 				{
 					//Solved the counting error by simply skipping the already in check
+					//FIXME are you handling concurrency somehow? My brain tells me there's something really wrong here.
 					it = hashmap.find(hasher);
 					if (it != hashmap.end())
 					{
@@ -227,6 +232,7 @@ void hash_function(int start_point)
 			}
 			else
 			{
+				//FIXME wtf is this ???
 				hasher = -1;
 			}
 		}
@@ -251,44 +257,44 @@ int main()
 	char sure = 'z';
 	std::ifstream infile("config.cfg");
 	if (infile.fail()) {
-		std::cout << "Config file not found";
-		exit(0);
+		std::cout << "Config file not found\n";
+		exit(0); //M$ is crap. 0 is and always be no errors.
 	}
 	std::string file_input;
 	std::cout << "Welcome to the Repeated Image Predator (RIP) v2.2\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	//Oh no, not checking input again...
-	while (!is_directory(path))
-	{
-		std::cout << "Enter the path where you want to search: ";
+	do {
+		std::cout << "Enter a valid path to search: ";
 		std::getline(std::cin, path);
-		if (!is_directory(path))
-		{
-			std::cout << "Not a valid directory, make sure it's not a path to a single image";
-		}
-	}
-	std::cout << "\nChoose between the different options: \n1 - Automatically delete images based on their size (saves heaviest)\n";
+	} while (!is_directory(path));
+
+	std::cout << "\nChoose between the different options:\n";
+	std::cout << "1 - Automatically delete images based on their size (saves heaviest)\n";
 	std::cout << "2 - Automatically delete images based on resolution (saves biggest resolution)\n";
 	std::cout << "3 - Manually delete images not recommended, takes a lot of time\n";
 	std::cout << "4 - Don't delete just show names of repeated images\n";
-	while (options < 1 || options > 4)
-	{
+	do {
 		std::cout << "Enter number: ";
+		std::cin.clear(); //Have you tried typing "a"? Perhaps also ignore required. FIXME
 		std::cin >> options;
-		if (options < 1 || options > 4) {
-			std::cout << "Invalid option, check if you used a number between 1 and 4\n";
+		if (options > 0 && options < 5) {
+			//Dead cat
+			break;
 		}
-	}
+		std::cout << "Invalid option, check if you used a number between 1 and 4\n";
+	} while (options < 1 || options > 4);
 	//add file reading check for opencl usage
 	std::getline(infile,file_input);
 	int initial_pos = file_input.find('=')+1;
 	int last_pos = file_input.find('#',initial_pos)-1;
+	//I'm crying with this shit. FIXMEFORGODSAKE
 	file_input = file_input.substr(initial_pos, last_pos-initial_pos); //get correct part of string
 	if (file_input.compare("yes") == 0) {
 		cv::ocl::setUseOpenCL(true);
+		//Look Dad! A magic number! FIXME
 		max_threads = 2; //Use only 2 threads if OpenCL is enabled, no need for more, no improvements
-	}
-	else {
+	} else { //sneaky change to educate yourself
 		cv::ocl::setUseOpenCL(false);
 	}
 
@@ -296,6 +302,7 @@ int main()
 	std::getline(infile, file_input);
 	initial_pos = file_input.find('=') + 1;
 	last_pos = file_input.find('#', initial_pos) - 1;
+	//I'm still crying. But harder. FIXMEORDIE
 	file_input = file_input.substr(initial_pos, last_pos - initial_pos); //get correct part of string
 	//If config file is not default convert to number, the program will crash if there's no default or a valid number also check if OpenCL is ON, since no real improvements are made by having opencl and more threads
 	if (file_input.compare("default") != 0 && !cv::ocl::useOpenCL()) {
