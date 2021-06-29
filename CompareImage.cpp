@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <thread>
 #include <mutex>
+#include <algorithm>
+#include <sqlite3.h>
 #include "CompareImage.h"
 #define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD and Intel should be able to run it, opencv will use any available version (Nvidia is a pussy and will only run 1.2)
 //Defined fs to avoid using the long string of characters every goddam time
@@ -20,10 +22,26 @@ using namespace boost::filesystem;
 cv::Size SIZE(8, 8); //Define size to be used as parameter in resize function, moved to global variable
 int max_threads = std::thread::hardware_concurrency(); //Set the max_threads = number of cpu cores, not really important when using OpenCL though
 std::mutex mtx;
+std::string search_path = "This_shit_better_not_exist_you_fucking_cunt";
 std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
 std::vector<path> image_path; //Vector of paths in which to store all paths to the images
+std::vector<path> loaded_paths; //Vector of paths in which to store the loaded paths from the database
 std::vector<path> repeated; //Vector in which to store all paths to REPEATED images
 int progress; //Used for progress bar shit
+sqlite3* db; //The database var
+const char* sql;
+char* SqlErrMsg;
+
+void databaseDelete(std::string path) {
+	int rc;
+	sql = ("DELETE FROM Image_Hashes WHERE PATH=\"" + path + "\"").c_str();
+	rc = sqlite3_exec(db, sql, NULL, 0, &SqlErrMsg);
+	if (rc != SQLITE_OK) {
+		//TODO: Log to file
+		std::cout << "Error deleting\n";
+		std::cout << SqlErrMsg;
+	}
+}
 
 //Method to delete the repeated images, if option is true it will delete based on rows and cols, if it's false it will delete based on file size
 void removeImages(bool option)
@@ -48,10 +66,12 @@ void removeImages(bool option)
 		}
 		if (size1 < size2)
 		{
+			databaseDelete(repeated[i].string());
 			remove(repeated[i]);
 		}
 		else
 		{
+			databaseDelete(repeated[i + 1].string());
 			remove(repeated[i + 1]);
 		}
 	}
@@ -72,9 +92,11 @@ void manualDelete()
 		switch (choice)
 		{
 		case 'l':
+			databaseDelete(repeated[i].string());
 			remove(repeated[i]);
 			break;
 		case 'r':
+			databaseDelete(repeated[i + 1].string());
 			remove(repeated[i + 1]);
 			break;
 		default:
@@ -83,6 +105,39 @@ void manualDelete()
 		}
 		std::cout << "\n";
 	}
+}
+
+// Function that goes through all database data and loads relevant data to teh hashmap
+static int databaseLoading(void* NotUsed, int argc, char** argv, char** azColName) {
+	int hasher;
+	std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
+	for (int i = 0; i < argc; i = i + 2) {
+		//First check if path of the images is contained on the search_path
+		if (strcmp(azColName[i], "PATH") == 0) {
+			if (std::string(argv[i]).find(search_path) != std::string::npos) {
+				//If the image is in our path check if it still exists (by searching the path inside the image_path)
+				hasher = atoi(argv[i + 1]);
+				//Add hash value to each path (path is a number of the position of a path in the vector image_path)
+				auto result = std::find(image_path.begin(), image_path.end(), argv[i]);
+				if (result != image_path.end()) {
+					int index = result - image_path.begin();
+					it = hashmap.find(hasher);
+					if (it != hashmap.end())
+					{
+						loaded_paths.push_back(image_path[index]);
+						repeated.push_back(image_path[it->second]);
+						repeated.push_back(image_path[index]);
+					}
+					else
+					{
+						hashmap[hasher] = index;
+						loaded_paths.push_back(image_path[index]); //Put the loaded paths inside loaded_paths to avoid hashing extra images
+					}
+				}
+			}
+		}
+	}
+	return 0;
 }
 
 bool isImage(std::string extension) {
@@ -96,9 +151,10 @@ bool isImage(std::string extension) {
 }
 
 //Method receives path, searches all images, loads vector and does anything with the images (delete or show)
-void search(const std::string& searc_path, const int options)
+void search(const int options)
 {
 	std::string aux; //Little CPU and memory improvement on image checks
+	int rc;
 	//define nullstream to try and get stderr to not print
 	const char* NULLSTREAM = "nul:"; //used to be "/dev/null", moved NULLSTREAM from line 36, bad const practices
 	std::vector<std::thread> threads(max_threads); //Vector to store threads creation data
@@ -108,7 +164,7 @@ void search(const std::string& searc_path, const int options)
 	auto suppress_error = freopen(NULLSTREAM, "w", stderr);
 	//Search for all the files and directories inside the firstly specified path
 	std::cout << "Looking for images in folders and loading them...\n";
-	for (const auto& el : recursive_directory_iterator(searc_path, directory_options::skip_permission_denied))
+	for (const auto& el : recursive_directory_iterator(search_path, directory_options::skip_permission_denied))
 	{
 		if (is_directory(el) != true)
 		{
@@ -123,6 +179,22 @@ void search(const std::string& searc_path, const int options)
 	std::cout << "Starting image processing and searching\n";
 	double division = 0;
 	progress = 0;
+
+	//load from database
+	sql = "SELECT * FROM Image_Hashes";
+	rc = sqlite3_exec(db, sql, databaseLoading, 0, &SqlErrMsg);
+	if (rc != SQLITE_OK) {
+		char option;
+		std::cout << "Couldn't load the database data\n";
+		std::cout << "Do you wish to continue? (Y/n)\n";
+		std::cin >> option;
+		if (option != 'Y') {
+			std::cout << "Exiting\n";
+			exit(-1);
+		}
+	}
+
+	//start the hash of new or non-database-saved images
 	for (int i = 0; i < max_threads; i++)
 	{
 		threads[i] = std::thread(hash_function, i);
@@ -163,7 +235,7 @@ void search(const std::string& searc_path, const int options)
 		removeImages(false); //false: based on size
 		break;
 	case 2:
-		removeImages(true); //true: based on rows adn cols
+		removeImages(true); //true: based on rows and cols
 		break;
 	case 3:
 		manualDelete(); //Show the user every pair of images and make him choose
@@ -180,7 +252,7 @@ void search(const std::string& searc_path, const int options)
 	std::cout << "Program ending, have a nice day :3\n";
 	auto time_elapsed = end - start;
 	int tot_time = std::chrono::duration_cast<std::chrono::seconds>(time_elapsed).count();
-	//show elapsed time with diferent 
+	//show elapsed time with diferent magnitudes
 	if (tot_time < 30)
 	{
 		std::cout << "Elapsed computation time: " << std::chrono::duration_cast<std::chrono::milliseconds>(time_elapsed).count() << "ms\n";
@@ -197,48 +269,63 @@ void search(const std::string& searc_path, const int options)
 			<< "hours and " << std::chrono::duration_cast<std::chrono::minutes>(time_elapsed).count() << "minutes\n";
 		std::cout << "shit that was a long time, hope it was all okay <3\n";
 	}
+	sqlite3_close(db); //close the database connection
 	system("pause");
 };
 
 void hash_function(int start_point)
 {
+	int rc;
+	std::string temp_sql;
+	const char* local_sql;
 	long int hasher = 1; //Store the hashed value of an image
 	std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
 	for (int i = start_point; i < image_path.size(); i += max_threads)
 	{
+		//Check if the image has already been loaded by the database
 		progress++;
-		//try {
-		cv::UMat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR).getUMat(cv::ACCESS_READ); //had to change from image_path[i].u8string() to .string() due to a library update
-		hasher = 1; //Must reset hasher to 1
-		if (processing_image.dims != 0)
-		{
-			cv::UMat gray_image; //Define gray image to create gray scale images
-			cv::cvtColor(processing_image, gray_image, cv::COLOR_BGR2GRAY);
-			cv::resize(gray_image, gray_image, SIZE);
-			for (int j = 0; j < (gray_image.cols - 1); j++)
-			{
-				for (int l = 0; l < gray_image.rows; l++)
+		if (std::find(loaded_paths.begin(), loaded_paths.end(), image_path[i]) == loaded_paths.end()) {
+			try {
+				cv::UMat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR).getUMat(cv::ACCESS_READ); //had to change from image_path[i].u8string() to .string() due to a library update
+				hasher = 1; //Must reset hasher to 1
+				if (processing_image.dims != 0)
 				{
-					hasher = hasher + gray_image.getMat(cv::ACCESS_READ).at<uchar>(l, j); //will leave it like this for now, seems to work
+					cv::UMat gray_image; //Define gray image to create gray scale images
+					cv::cvtColor(processing_image, gray_image, cv::COLOR_BGR2GRAY);
+					cv::resize(gray_image, gray_image, SIZE);
+					for (int j = 0; j < (gray_image.cols - 1); j++)
+					{
+						for (int l = 0; l < gray_image.rows; l++)
+						{
+							hasher = hasher + gray_image.getMat(cv::ACCESS_READ).at<uchar>(l, j); //will leave it like this for now, seems to work
+						}
+						hasher = hasher * hasher; //just to make hasher even more unique
+					}
+					temp_sql = "INSERT INTO Image_Hashes VALUES(\"" + image_path[i].string() + "\"," + std::to_string(hasher) + ")";
+					local_sql = temp_sql.c_str();
+					rc = sqlite3_exec(db, local_sql, NULL, 0, &SqlErrMsg); //Check if the tables exist
+					it = hashmap.find(hasher);
+					if (it != hashmap.end())
+					{
+						repeated.push_back(image_path[it->second]);
+						repeated.push_back(image_path[i]);
+					}
+					else
+					{
+						//Add hash value to each path (path is a number of the position of a path in the vector image_path)
+						hashmap[hasher] = i;
+					}
+					if (rc != SQLITE_OK) {
+						std::cout << SqlErrMsg;
+						std::this_thread::sleep_for(std::chrono::milliseconds(500));
+						//TODO: Log errors to file
+					}
 				}
-				hasher = hasher * hasher; //just to make hasher even more unique
 			}
-			it = hashmap.find(hasher);
-			if (it != hashmap.end())
-			{
-				repeated.push_back(image_path[it->second]);
-				repeated.push_back(image_path[i]);
-			}
-			else
-			{
-				//Add hash value to each path (path is a number of the position of a path in the vector image_path)
-				hashmap[hasher] = i;
+			catch (...) {
+				//TODO: Add printing to file
 			}
 		}
-		/*}
-		catch (...) {
-
-		}*/
 	}
 }
 
@@ -253,29 +340,55 @@ int handleError(int status, const char* func_name,
 //I can't be bothered to make a UI for now so console will be
 int main()
 {
-	std::string path = "This_shit_better_not_exist_you_fucking_cunt";
 	int options = 0;
 	char sure = 'z';
+	int rc; //Error check for database connection
+	rc = sqlite3_open(".\database", &db); // Connect to database
 	std::ifstream infile("config.cfg");
-	if (infile.fail()) {
+	if (infile.fail()) { //Error check for config file
 		std::cout << "Config file not found!\n";
-		std::cout << "Press any button to leave";
+		std::cout << "Press any button to exit";
 		std::cin >> options;
 		exit(-1);
 	}
+	if (rc) { //Error check for database connection
+		std::cout << "The database couldn't be reached\n";
+		std::cout << "Press any button to exit";
+		system("pause");
+		exit(-1);
+	}
+	sql = "SELECT * FROM Image_Hashes";
+	rc = sqlite3_exec(db, sql, NULL, 0, &SqlErrMsg); //Check if the tables exist
+	if (rc != SQLITE_OK) {
+		//Create the tables for the database
+		//Primary key: Pair full path + hash
+		//No other values
+		sql = "CREATE TABLE Image_Hashes("\
+			"PATH VARCHAR(128),"\
+			"HASH INTEGER(64), "\
+			"CONSTRAINT hash_pk PRIMARY KEY(PATH, HASH)"\
+			")";
+		rc = sqlite3_exec(db, sql, NULL, 0, &SqlErrMsg);
+		if (rc != SQLITE_OK) {
+			std::cout << "Couldn't create the database tables\n";
+			std::cout << "Press any button to exit";
+			system("pause");
+			exit(-1);
+		}
+	}
 	std::string file_input;
-	std::cout << "Welcome to the Repeated Image Predator (RIP) v2.4\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
+	std::cout << "Welcome to the Repeated Image Predator (RIP) v3.0\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	//Oh no, not checking input again...
 	do
 	{
 		std::cout << "Enter the path where you want to search: ";
-		std::getline(std::cin, path);
-		if (!is_directory(path))
+		std::getline(std::cin, search_path);
+		if (!is_directory(search_path))
 		{
 			std::cout << "Not a valid directory, make sure it's not a path to a single image";
 		}
-	} while (!is_directory(path));
+	} while (!is_directory(search_path));
 	std::cout << "\nChoose between the different options: \n1 - Automatically delete images based on their size (saves heaviest)\n";
 	std::cout << "2 - Automatically delete images based on resolution (saves biggest resolution)\n";
 	std::cout << "3 - Manually delete images not recommended, takes a lot of time\n";
@@ -312,5 +425,5 @@ int main()
 	}
 	infile.close();
 	//Time to work OH BOI
-	search(path, options);
+	search(options);
 }
