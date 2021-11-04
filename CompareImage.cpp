@@ -22,7 +22,8 @@ using namespace boost::filesystem;
 cv::Size SIZE(8, 8); //Define size to be used as parameter in resize function, moved to global variable
 int max_threads = std::thread::hardware_concurrency(); //Set the max_threads = number of cpu cores, not really important when using OpenCL though
 std::mutex mtx;
-std::string search_path = "This_shit_better_not_exist_you_fucking_cunt";
+std::string search_path = "";
+std::string move_path = "";
 std::unordered_map<long int, int> hashmap; //hashmap will store the hash and the position of a path in image_path
 std::vector<path> image_path; //Vector of paths in which to store all paths to the images
 std::vector<path> loaded_paths; //Vector of paths in which to store the loaded paths from the database
@@ -107,6 +108,30 @@ void manualDelete()
 	}
 }
 
+void moveImages()
+{
+	//Move images from original path to move_path
+	std::cout << "Starting the move of images... \n";
+	std::string move_name;
+	std::string buffer;
+	std::vector<std::string> move_buffer;
+	for (int i = 0; i < repeated.size(); i = i + 1)
+	{
+		move_buffer.push_back(repeated[i].string().substr(repeated[i].string().find_last_of("/\\") + 1));
+		buffer = repeated[i].string().substr(0, repeated[i].string().find_last_of("/\\"));
+		buffer = buffer.substr(buffer.find_last_of("/\\") + 1);
+		move_buffer.push_back(buffer);
+		move_name = move_buffer[1] + "\\" + move_buffer[0]; //Add directory and image
+		//First create directory if it doesn't exist
+		if (!exists(move_path + "\\" + move_buffer[1])) {
+			create_directory(move_path + "\\" + move_buffer[1]);
+		}
+		buffer = move_path + "\\" + move_name;
+		rename(repeated[i], buffer); //Move the image to a new directory for the repeated images
+		move_buffer.clear();
+	}
+}
+
 // Function that goes through all database data and loads relevant data to teh hashmap
 static int databaseLoading(void* NotUsed, int argc, char** argv, char** azColName) {
 	int hasher;
@@ -176,6 +201,11 @@ void search(const int options)
 		}
 	}
 	std::cout << "Found " << image_path.size() << " images \n";
+	if (image_path.size() == 0) {
+		std::cout << "Program ending, have a nice day :3\n";
+		sqlite3_close(db); //close the database connection
+		system("pause");
+	}
 	std::cout << "Starting image processing and searching\n";
 	double division = 0;
 	progress = 0;
@@ -239,6 +269,9 @@ void search(const int options)
 		break;
 	case 3:
 		manualDelete(); //Show the user every pair of images and make him choose
+		break;
+	case 4:
+		moveImages(); //Move iamges to the indicated path
 		break;
 	default:
 		//Make a for to show all names
@@ -377,7 +410,7 @@ int main()
 		}
 	}
 	std::string file_input;
-	std::cout << "Welcome to the Repeated Image Predator (RIP) v3.0\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
+	std::cout << "Welcome to the Repeated Image Predator (RIP) v3.1\nThis program was created by Joan Gil (Linkedin: https://www.linkedin.com/in/joan-gil-rigo-a65536184/) \nand is used for free under the MIT license, check MIT info at: https://en.wikipedia.org/wiki/MIT_License \n";
 	std::cout << "Please think about donating: https://www.paypal.me/jgil99 \nFollow the instructions to begin search: \n\n";
 	//Oh no, not checking input again...
 	do
@@ -392,15 +425,29 @@ int main()
 	std::cout << "\nChoose between the different options: \n1 - Automatically delete images based on their size (saves heaviest)\n";
 	std::cout << "2 - Automatically delete images based on resolution (saves biggest resolution)\n";
 	std::cout << "3 - Manually delete images not recommended, takes a lot of time\n";
-	std::cout << "4 - Don't delete just show names of repeated images\n";
+	std::cout << "4 - Move images to another directory to manually check them\n";
+	std::cout << "5 - Don't delete just show names of repeated images\n";
 	do
 	{
 		std::cout << "Enter number: ";
 		std::cin >> options;
-		if (options < 1 || options > 4) {
-			std::cout << "Invalid option, check if you used a number between 1 and 4\n";
+		if (options < 1 || options > 5) {
+			std::cout << "Invalid option, check if you used a number between 1 and 5\n";
 		}
-	} while (options < 1 || options > 4);
+	} while (options < 1 || options > 5);
+	//If user selects option 4 ask for directory to move images to
+	std::getline(std::cin, move_path);
+	if (options == 4) {
+		do
+		{
+			std::cout << "Enter the path to where you want to move the found images: ";
+			std::getline(std::cin, move_path);
+			if (!is_directory(move_path))
+			{
+				std::cout << "Not a valid directory, make sure it's not a path to a single image";
+			}
+		} while (!is_directory(move_path));
+	}
 	//add file reading check for opencl usage
 	std::getline(infile, file_input);
 	int initial_pos = file_input.find('=') + 1;
