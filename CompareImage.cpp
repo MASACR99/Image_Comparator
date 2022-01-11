@@ -132,7 +132,7 @@ void moveImages()
 	}
 }
 
-// Function that goes through all database data and loads relevant data to teh hashmap
+// Function that goes through all database data and loads relevant data to the hashmap
 static int databaseLoading(void* NotUsed, int argc, char** argv, char** azColName) {
 	int hasher;
 	std::unordered_map<long int, int>::iterator it; //Iterator for hashmap
