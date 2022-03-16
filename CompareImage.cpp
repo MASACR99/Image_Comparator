@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <sqlite3.h>
 #include "CompareImage.h"
+
 #define CL_HPP_TARGET_OPENCL_VERSION 200 //Target is 2.0, AMD and Intel should be able to run it, opencv will use any available version (Nvidia is a pussy and will only run 1.2)
 //Defined fs to avoid using the long string of characters every goddam time
 //But I'm dumb enough to not place a using std:: because I'm as dumb as a fucking fish
@@ -45,50 +46,92 @@ void databaseDelete(std::string path) {
 	}
 }
 
+long int getHashFrom(int i1, int i2) {
+	long int hash = -1;
+	for (auto it = hashmap.begin(); it != hashmap.end(); ++it) {
+		if (it->second == i1 || it->second == i2) {
+			hash = it->first;
+			break;
+		}
+	}
+	return hash;
+}
+
 //Method to delete the repeated images, if option is false it will delete based on rows and cols, if it's true it will delete based on file size
 void removeImages(bool option)
 {
 	//Check size and delete lower
-	std::unordered_map<std::string, int> deletePositions;
-	int size1;
-	int size2;
+	//This map will contain all paths with the same hash
+	//and will be used to create vectors to use for processing
+	std::vector<path> paths;
+	std::unordered_map<long int, std::vector<path>> processingMap;
 	std::cout << "Starting deletion of images\n";
 	for (int i = 0; i < repeated.size(); i = i + 2)
 	{
+		//try to get the hash from either i or i+1 since at least one of them must exist
+		//after that store the hash inside the key and store the paths
+		paths.clear();
+		long int hash = getHashFrom(i, i + 1);
+		//if the hash isn't found something very wrong happened
+		if (hash != -1) {
+			if (processingMap.count(hash) == 0) {
+				paths.push_back(repeated[i]);
+				paths.push_back(repeated[i + 1]);
+				processingMap[getHashFrom(i, i + 1)] = paths;
+			}
+			else {
+				if (processingMap[hash][0].string() == repeated[i].string()) {
+					processingMap[hash].push_back(repeated[i + 1]);
+				}
+				else {
+					processingMap[hash].push_back(repeated[i]);
+				}
+			}
+		}
+	}
+	for (auto it = processingMap.begin(); it != processingMap.end(); ++it)
+	{
+		std::vector<unsigned int> sizes;
+		unsigned int size;
+		unsigned int biggestSize = 0;
 		if (option)
 		{
-			size1 = file_size(repeated[i]);
-			size2 = file_size(repeated[i + 1]);
-		}
-		else
-		{
-			cv::UMat image1 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED).getUMat(cv::ACCESS_READ);
-			cv::UMat image2 = cv::imread(repeated[i].string(), cv::IMREAD_UNCHANGED).getUMat(cv::ACCESS_READ);
-			size1 = image1.cols + image1.rows;
-			size2 = image2.cols + image2.rows;
-		}
-		if (size1 < size2)
-		{
-			//if the image hasn't been deleted already
-			if (deletePositions.count(repeated[i].string()) == 0) {
-				//add to the removed vector
-				deletePositions[repeated[i].string()] = 0;
-				//remove from database
-				databaseDelete(repeated[i].string());
-				//remove from filesystem
-				remove(repeated[i]);
+			for (int i = 0; i < it->second.size(); i++) {
+				size = file_size(it->second[i]);
+				if (size > biggestSize) {
+					biggestSize = size;
+				}
+				sizes.push_back(size);
 			}
 		}
 		else
 		{
-			//if the image hasn't been deleted already
-			if (deletePositions.count(repeated[i + 1].string()) == 0) {
-				//add to the removed vector
-				deletePositions[repeated[i + 1].string()] = 0;
+			cv::UMat image;
+			for (int i = 0; i < it->second.size(); i++) {
+				image = cv::imread(it->second[i].string(), cv::IMREAD_UNCHANGED).getUMat(cv::ACCESS_READ);
+				size = image.cols * image.rows;
+				if (size > biggestSize) {
+					biggestSize = size;
+				}
+				sizes.push_back(size);
+			}
+		}
+		bool removed = false;
+		for (int i = 0; i < sizes.size(); i++) {
+			if (sizes.at(i) != biggestSize) {
 				//remove from database
-				databaseDelete(repeated[i + 1].string());
+				databaseDelete(it->second[i].string());
 				//remove from filesystem
-				remove(repeated[i + 1]);
+				remove(it->second[i]);
+				removed = true;
+			}
+		}
+		if (!removed) {
+			for (int i = 1; i < sizes.size(); i++) {
+				//remove from database
+				databaseDelete(it->second[i].string());
+				//remove from filesystem
+				remove(it->second[i]);
 			}
 		}
 	}
@@ -258,7 +301,6 @@ void search(const int options)
 	}
 	std::cout << "Starting image processing and searching\n";
 	double division = 0;
-	progress = 0;
 
 	//load from database
 	sql = "SELECT * FROM Image_Hashes";
@@ -367,7 +409,9 @@ void hash_function(int start_point)
 	for (int i = start_point; i < image_path.size(); i += max_threads)
 	{
 		//Check if the image has already been loaded by the database
+		mtx.lock();
 		progress++;
+		mtx.unlock();
 		if (std::find(loaded_paths.begin(), loaded_paths.end(), image_path[i]) == loaded_paths.end()) {
 			try {
 				cv::UMat processing_image = cv::imread(image_path[i].string(), cv::IMREAD_COLOR).getUMat(cv::ACCESS_READ); //had to change from image_path[i].u8string() to .string() due to a library update
@@ -391,13 +435,17 @@ void hash_function(int start_point)
 					it = hashmap.find(hasher);
 					if (it != hashmap.end())
 					{
+						mtx.lock();
 						repeated.push_back(image_path[it->second]);
 						repeated.push_back(image_path[i]);
+						mtx.unlock();
 					}
 					else
 					{
 						//Add hash value to each path (path is a number of the position of a path in the vector image_path)
+						mtx.lock();
 						hashmap[hasher] = i;
+						mtx.unlock();
 					}
 					if (rc != SQLITE_OK) {
 						std::cout << SqlErrMsg;
