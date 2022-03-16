@@ -3,12 +3,14 @@
 ### A simple C++ program that will search on a directory and all sub-directories images and check for repeated ones, works even on different resolution images!
 
 #### Index
+[Known errors](#known-errors)
 [Summary](#summary)  
 [How to use](#how-to-use)  
 [Config](#config)  
 [To-do](#to-do)  
 [Credits](#credits)  
 [Donations](#donations)
+[Disclaimer](#disclaimer)
 
 #### Known errors
 There's a problem where images with specific UTF characters cannot be loaded. This has to do with the utf I'm using, I'll try to find a solution in later updates
@@ -38,3 +40,9 @@ Special thanks to my friend KiwiRives who helped polish from the first iteration
   
 #### Donations  
 If you're interested in donating to me (somehow) here's a link to [paypal](https://www.paypal.me/jgil99).
+
+#### Disclaimer
+This program is offered for free as is, I am not responsible for problems it could have or create while running, if you want to modify or do something with my code please follow the License. 
+Please remember that this program isn't perfect, the possibility of having a false positive is pretty narrow (and a false negative are pretty big) since it uses a very simple algorithm to process the images so please, don't use this with very important projects that need very high precision.
+
+Finally, thanks for reading through and being interested in this project. I really appreciate it
