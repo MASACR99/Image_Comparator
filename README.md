@@ -9,6 +9,9 @@
 [To-do](#to-do)  
 [Credits](#credits)  
 [Donations](#donations)
+
+#### Known errors
+There's a problem where images with specific UTF characters cannot be loaded. This has to do with the utf I'm using, I'll try to find a solution in later updates
   
 #### Summary  
 Opens a terminal and prompts you with instructions to open a folder and start looking for repeated images inside it and all sub-folders, after that based on your selection it will delete images automatically, show the names of the files or prompt you to manually delete each of them. In case you want to compile the code you need opencv, boost filesystem and sqlrite3 ~~all the .dll is included in the latest release and is needed for the .exe to work~~ no dlls needed anymore. Enjoy :3  
