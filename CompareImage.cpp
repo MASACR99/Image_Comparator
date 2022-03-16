@@ -40,14 +40,16 @@ void databaseDelete(std::string path) {
 	if (rc != SQLITE_OK) {
 		//TODO: Log to file
 		std::cout << "Error deleting\n";
-		std::cout << SqlErrMsg;
+		std::cout << SqlErrMsg + '\n';
+		std::cout << path + "\n";
 	}
 }
 
-//Method to delete the repeated images, if option is true it will delete based on rows and cols, if it's false it will delete based on file size
+//Method to delete the repeated images, if option is false it will delete based on rows and cols, if it's true it will delete based on file size
 void removeImages(bool option)
 {
 	//Check size and delete lower
+	std::unordered_map<std::string, int> deletePositions;
 	int size1;
 	int size2;
 	std::cout << "Starting deletion of images\n";
@@ -67,13 +69,27 @@ void removeImages(bool option)
 		}
 		if (size1 < size2)
 		{
-			databaseDelete(repeated[i].string());
-			remove(repeated[i]);
+			//if the image hasn't been deleted already
+			if (deletePositions.count(repeated[i].string()) == 0) {
+				//add to the removed vector
+				deletePositions[repeated[i].string()] = 0;
+				//remove from database
+				databaseDelete(repeated[i].string());
+				//remove from filesystem
+				remove(repeated[i]);
+			}
 		}
 		else
 		{
-			databaseDelete(repeated[i + 1].string());
-			remove(repeated[i + 1]);
+			//if the image hasn't been deleted already
+			if (deletePositions.count(repeated[i + 1].string()) == 0) {
+				//add to the removed vector
+				deletePositions[repeated[i + 1].string()] = 0;
+				//remove from database
+				databaseDelete(repeated[i + 1].string());
+				//remove from filesystem
+				remove(repeated[i + 1]);
+			}
 		}
 	}
 	std::cout << "Finished removal \n";
@@ -82,6 +98,7 @@ void removeImages(bool option)
 void manualDelete()
 {
 	//Start showing every pair of images and ask Right (R) or Left(L)
+	std::unordered_map<std::string, int> deletePositions;
 	char choice;
 	std::cout << "Showing name of images, choose using L (left) or R (right), any other character will skip it, use Ctrl+C to skip all";
 	for (int i = 0; i < repeated.size(); i = i + 2)
@@ -93,12 +110,24 @@ void manualDelete()
 		switch (choice)
 		{
 		case 'l':
-			databaseDelete(repeated[i].string());
-			remove(repeated[i]);
+			if (deletePositions.count(repeated[i].string()) == 0) {
+				//add to the removed vector
+				deletePositions[repeated[i].string()] = 0;
+				//remove from database
+				databaseDelete(repeated[i].string());
+				//remove from filesystem
+				remove(repeated[i]);
+			}
 			break;
 		case 'r':
-			databaseDelete(repeated[i + 1].string());
-			remove(repeated[i + 1]);
+			if (deletePositions.count(repeated[i + 1].string()) == 0) {
+				//add to the removed vector
+				deletePositions[repeated[i + 1].string()] = 0;
+				//remove from database
+				databaseDelete(repeated[i + 1].string());
+				//remove from filesystem
+				remove(repeated[i + 1]);
+			}
 			break;
 		default:
 			std::cout << "Wrong char, no image was deleted";
@@ -114,21 +143,42 @@ void moveImages()
 	std::cout << "Starting the move of images... \n";
 	std::string move_name;
 	std::string buffer;
+	std::unordered_map<std::string, int> repeatedPaths;
 	std::vector<std::string> move_buffer;
 	for (int i = 0; i < repeated.size(); i = i + 1)
 	{
-		move_buffer.push_back(repeated[i].string().substr(repeated[i].string().find_last_of("/\\") + 1));
-		buffer = repeated[i].string().substr(0, repeated[i].string().find_last_of("/\\"));
-		buffer = buffer.substr(buffer.find_last_of("/\\") + 1);
-		move_buffer.push_back(buffer);
-		move_name = move_buffer[1] + "\\" + move_buffer[0]; //Add directory and image
-		//First create directory if it doesn't exist
-		if (!exists(move_path + "\\" + move_buffer[1])) {
-			create_directory(move_path + "\\" + move_buffer[1]);
+		try {
+			if (repeatedPaths.count(repeated[i].string()) == 0) {
+				repeatedPaths[repeated[i].string()] = 0;
+			}
+			else {
+				repeated.erase(repeated.begin() + i);
+			}
 		}
-		buffer = move_path + "\\" + move_name;
-		rename(repeated[i], buffer); //Move the image to a new directory for the repeated images
-		move_buffer.clear();
+		catch (const std::exception& exc) {}
+	}
+	repeatedPaths.clear();
+	for (int i = 0; i < repeated.size(); i = i + 1)
+	{
+		try {
+			move_buffer.push_back(repeated[i].string().substr(repeated[i].string().find_last_of("/\\") + 1));
+			buffer = repeated[i].string().substr(0, repeated[i].string().find_last_of("/\\"));
+			buffer = buffer.substr(buffer.find_last_of("/\\") + 1);
+			move_buffer.push_back(buffer);
+			move_name = move_buffer[1] + "\\" + move_buffer[0]; //Add directory and image
+			//First create directory if it doesn't exist
+			if (!exists(move_path + "\\" + move_buffer[1])) {
+				create_directory(move_path + "\\" + move_buffer[1]);
+			}
+			buffer = move_path + "\\" + move_name;
+			rename(repeated[i], buffer); //Move the image to a new directory for the repeated images
+			move_buffer.clear();
+		}
+		catch (const std::exception& exc) {
+			std::cout << "Crash\n";
+			std::cout << exc.what();
+			std::cout << "repeated[i].string(): " + repeated[i].string() + "\n";
+		}
 	}
 }
 
@@ -262,10 +312,10 @@ void search(const int options)
 	switch (options)
 	{
 	case 1:
-		removeImages(false); //false: based on size
+		removeImages(false); //false: based on rows and cols
 		break;
 	case 2:
-		removeImages(true); //true: based on rows and cols
+		removeImages(true); //true: based on size
 		break;
 	case 3:
 		manualDelete(); //Show the user every pair of images and make him choose
@@ -306,6 +356,7 @@ void search(const int options)
 	system("pause");
 };
 
+//TODO: Add a try-catch to catch any exceptions and store those to an errors file so users can send debug data and the program can keep working even if it has to skip some images
 void hash_function(int start_point)
 {
 	int rc;
