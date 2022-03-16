@@ -3,13 +3,13 @@
 ### A simple C++ program that will search on a directory and all sub-directories images and check for repeated ones, works even on different resolution images!
 
 #### Index
-[Known errors](#known-errors)
+[Known errors](#known-errors)<br />
 [Summary](#summary)  
 [How to use](#how-to-use)  
 [Config](#config)  
 [To-do](#to-do)  
 [Credits](#credits)  
-[Donations](#donations)
+[Donations](#donations)<br />
 [Disclaimer](#disclaimer)
 
 #### Known errors
