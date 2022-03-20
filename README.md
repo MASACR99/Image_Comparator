@@ -13,7 +13,7 @@
 [Disclaimer](#disclaimer)
 
 #### Known errors
-There's a problem where images with specific UTF characters cannot be loaded. This has to do with the utf I'm using, I'll try to find a solution in later updates
+There's a problem where images with specific unicode characters where this cannot be loaded. This has to do with the boost path library not supporting utf16 nor utf32, which means files with emojis for example cannot be open. In that case the only option is to change the name of the files. At least for now.
   
 #### Summary  
 Opens a terminal and prompts you with instructions to open a folder and start looking for repeated images inside it and all sub-folders, after that based on your selection it will delete images automatically, show the names of the files or prompt you to manually delete each of them. In case you want to compile the code you need opencv, boost filesystem and sqlrite3 ~~all the .dll is included in the latest release and is needed for the .exe to work~~ no dlls needed anymore. Enjoy :3  
