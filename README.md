@@ -1,5 +1,5 @@
 # Image_Comparator  
-# TEST AGAIN
+#Another test
 ### A simple C++ program that will search on a directory and all sub-directories images and check for repeated ones, works even on different resolution images!
 
 #### Index
